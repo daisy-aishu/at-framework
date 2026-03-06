@@ -52,7 +52,7 @@ jobs:
           BEFORE_SHA: ${{ inputs.before_sha }}
           SHA: ${{ inputs.source_sha }}
           MSG: ${{ inputs.commit_message }}
-          SOURCE_REPO_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN || github.token }}
+          SOURCE_REPO_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN }}
         run: |
           set -euo pipefail
 
