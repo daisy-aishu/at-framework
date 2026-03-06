@@ -43,7 +43,7 @@ jobs:
           ref: ${{ inputs.source_ref }}
           path: source
           fetch-depth: 2
-          token: ${{ secrets.SOURCE_REPO_TOKEN || github.token }}
+          token: ${{ secrets.SOURCE_REPO_TOKEN }}
 
       - name: Generate listener_output.json
         env:
