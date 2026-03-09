@@ -63,67 +63,8 @@ jobs:
         run: |
           set -euo pipefail
           
-          # 获取testcase目录下的模块名称（排除_config）
-          modules=$(find testcase -type d -name "_config" -prune -o -type d -exec basename {} \; | grep -v "_config" | sort | uniq)
-          
-          # 准备传递给Coze的数据
-          data=""
-          for module in $modules; do
-            # 构建模块路径
-            module_path="testcase/$module"
-            
-            # 检查apis.yaml和path_scope_mapping.yaml是否存在
-            if [ -f "$module_path/_config/apis.yaml" ] && [ -f "$module_path/_config/path_scope_mapping.yaml" ]; then
-              # 读取文件内容
-              apis_content=$(cat "$module_path/_config/apis.yaml")
-              mapping_content=$(cat "$module_path/_config/path_scope_mapping.yaml")
-              
-              # 构建数据
-              data="$data
-模块: $module
-apis.yaml路径: $module_path/_config/apis.yaml
-apis.yaml内容:
-$apis_content
-
-path_scope_mapping.yaml路径: $module_path/_config/path_scope_mapping.yaml
-path_scope_mapping.yaml内容:
-$mapping_content
-
-"
-            fi
-          done
-          
-          # 构建请求体
-          request_body=$(jq -n --arg data "$data" '
-            {
-              "content": {
-                "query": {
-                  "prompt": [
-                    {
-                      "type": "text",
-                      "content": {
-                        "text": $data
-                      }
-                    }
-                  ]
-                }
-              },
-              "type": "query",
-              "session_id": "TUnB_7Bu7_h6zBgi_ntgJ",
-              "project_id": 7614077849934413843
-            }
-          ')
-          
-          # 调用Coze智能体
-          echo "Calling Coze agent with testcase modules information..."
-          response=$(curl --location --request POST "https://956xc237sr.coze.site/stream_run" \
-            --header "Authorization: Bearer $COZE_TOKEN" \
-            --header "Content-Type: application/json" \
-            --data "$request_body")
-          
-          # 输出响应
-          echo "Coze agent response:"
-          echo "$response"
+          # 调用Python脚本处理testcase模块信息并调用Coze智能体
+          python scripts/call_coze_agent.py --token "$COZE_TOKEN"
 
       - name: Upload listener_output.json
         uses: actions/upload-artifact@v4
