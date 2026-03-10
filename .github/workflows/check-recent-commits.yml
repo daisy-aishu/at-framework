@@ -9,7 +9,7 @@ on:
         type: string
       source_ref:
         description: Source branch name (e.g. main)
-        required: true
+        required: false
         default: main
         type: string
       hours:
