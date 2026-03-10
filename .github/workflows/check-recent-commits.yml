@@ -15,8 +15,8 @@ on:
       hours:
         description: Hours to look back (default: 2)
         required: false
-        default: 2
-        type: number
+        default: "2"
+        type: string
   schedule:
     # 每2小时运行一次（UTC时间，中国时间UTC+8）
     - cron: '0 */2 * * *'
@@ -38,7 +38,7 @@ jobs:
         env:
           SOURCE_REPO: ${{ inputs.source_repo || 'your-org/your-repo' }}
           SOURCE_REF: ${{ inputs.source_ref || 'main' }}
-          HOURS: ${{ inputs.hours || 2 }}
+          HOURS: ${{ inputs.hours || '2' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
