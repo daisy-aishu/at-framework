@@ -13,7 +13,7 @@ on:
         default: main
         type: string
       hours:
-        description: Hours to look back (default: 2)
+        description: Hours to look back (default 2)
         required: false
         default: "2"
         type: string
