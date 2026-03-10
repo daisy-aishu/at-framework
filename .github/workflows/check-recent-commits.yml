@@ -1,0 +1,187 @@
+name: Check Recent Commits (2 Hours)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: Source repo (owner/repo)
+        required: true
+        type: string
+      source_ref:
+        description: Source branch name (e.g. main)
+        required: true
+        default: main
+        type: string
+      hours:
+        description: Hours to look back (default: 2)
+        required: false
+        default: 2
+        type: number
+  schedule:
+    # 每2小时运行一次（UTC时间，中国时间UTC+8）
+    - cron: '0 */2 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  check-commits:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout at-framework
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Get recent commits
+        id: get-commits
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo || 'your-org/your-repo' }}
+          SOURCE_REF: ${{ inputs.source_ref || 'main' }}
+          HOURS: ${{ inputs.hours || 2 }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          
+          # 计算时间范围（2小时前到现在）
+          SINCE_TIME=$(date -u -d "$HOURS hours ago" +"%Y-%m-%dT%H:%M:%SZ")
+          echo "Checking commits since: $SINCE_TIME"
+          
+          # 使用GitHub API获取提交记录
+          API_URL="https://api.github.com/repos/$SOURCE_REPO/commits"
+          RESPONSE=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "$API_URL?sha=$SOURCE_REF&since=$SINCE_TIME&per_page=100")
+          
+          # 检查API响应
+          if echo "$RESPONSE" | grep -q "Not Found"; then
+            echo "Error: Repository not found or no access"
+            echo "has_commits=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # 提取提交信息
+          COMMITS=$(echo "$RESPONSE" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          if isinstance(data, list):
+              commits = data
+          else:
+              commits = data.get('items', [])
+          print(json.dumps(commits))
+          ")
+          
+          # 检查是否有提交
+          COMMIT_COUNT=$(echo "$COMMITS" | python3 -c "import json, sys; print(len(json.load(sys.stdin)))")
+          echo "Found $COMMIT_COUNT commits in last $HOURS hours"
+          
+          if [ "$COMMIT_COUNT" -eq 0 ]; then
+            echo "has_commits=false" >> $GITHUB_OUTPUT
+            echo "No recent commits found"
+            exit 0
+          fi
+          
+          echo "has_commits=true" >> $GITHUB_OUTPUT
+          echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
+          
+          # 保存提交信息到文件
+          echo "$COMMITS" > recent_commits.json
+          
+          # 输出提交摘要
+          echo "$COMMITS" | python3 -c "
+          import json, sys
+          commits = json.load(sys.stdin)
+          for i, commit in enumerate(commits, 1):
+              sha = commit.get('sha', '')[:7]
+              msg = commit.get('commit', {}).get('message', '').split('\n')[0]
+              author = commit.get('commit', {}).get('author', {}).get('name', 'Unknown')
+              date = commit.get('commit', {}).get('author', {}).get('date', '')
+              print(f'{i}. [{sha}] {msg} - {author} ({date})')
+          "
+
+      - name: Generate listener_output.json
+        if: steps.get-commits.outputs.has_commits == 'true'
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo || 'your-org/your-repo' }}
+          SOURCE_REF: ${{ inputs.source_ref || 'main' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          
+          # 读取提交信息
+          COMMITS=$(cat recent_commits.json)
+          
+          # 生成包含所有提交的listener_output.json
+          echo "$COMMITS" | python3 -c "
+          import json, sys, os
+          from datetime import datetime
+          
+          commits = json.load(sys.stdin)
+          
+          # 为每个提交获取详细信息
+          commit_list = []
+          for commit in commits:
+              sha = commit.get('sha', '')
+              msg = commit.get('commit', {}).get('message', '')
+              author = commit.get('commit', {}).get('author', {}).get('name', '')
+              date = commit.get('commit', {}).get('author', {}).get('date', '')
+              
+              # 获取变更文件
+              files_url = commit.get('url', '').replace('/commits/', '/commits/')
+              files_response = os.popen(f'curl -s -H \"Authorization: token $GITHUB_TOKEN\" \"{files_url}\"').read()
+              files_data = json.loads(files_response)
+              
+              changed_files = []
+              for file_info in files_data.get('files', []):
+                  filename = file_info.get('filename', '')
+                  status = file_info.get('status', 'modified')
+                  changed_files.append({'path': filename, 'status': status})
+              
+              # 构建提交信息
+              commit_info = {
+                  'sha': sha,
+                  'short_sha': sha[:7],
+                  'commit_message': msg,
+                  'commit_url': commit.get('html_url', ''),
+                  'author': author,
+                  'commit_date': date,
+                  'changed_files': changed_files,
+                  'change_summary': {
+                      'added': [f['path'] for f in changed_files if f['status'] == 'added'],
+                      'modified': [f['path'] for f in changed_files if f['status'] == 'modified'],
+                      'removed': [f['path'] for f in changed_files if f['status'] == 'removed']
+                  }
+              }
+              commit_list.append(commit_info)
+          
+          # 构建最终的listener_output
+          listener_output = {
+              'repo': '$SOURCE_REPO',
+              'branch': '$SOURCE_REF',
+              'check_time': datetime.utcnow().isoformat() + 'Z',
+              'total_commits': len(commit_list),
+              'commits': commit_list
+          }
+          
+          # 保存到单个文件
+          with open('listener_output.json', 'w', encoding='utf-8') as f:
+              json.dump(listener_output, f, ensure_ascii=False, indent=2)
+          
+          print(f'Generated listener_output.json with {len(commit_list)} commits')
+          "
+
+      - name: Upload listener output
+        if: steps.get-commits.outputs.has_commits == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: listener-output
+          path: listener_output.json
+
+      - name: Summary
+        if: steps.get-commits.outputs.has_commits == 'true'
+        run: |
+          echo "## Recent Commits Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Found ${{ steps.get-commits.outputs.commit_count }} commits in last ${{ inputs.hours || 2 }} hours" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Generated listener_output.json with all commit information" >> $GITHUB_STEP_SUMMARY
