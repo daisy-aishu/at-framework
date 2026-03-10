@@ -132,10 +132,19 @@ jobs:
               files_data = json.loads(files_response)
               
               changed_files = []
+              diffs = []
               for file_info in files_data.get('files', []):
                   filename = file_info.get('filename', '')
                   status = file_info.get('status', 'modified')
                   changed_files.append({'path': filename, 'status': status})
+                  
+                  # 获取patch（diff）
+                  patch = file_info.get('patch', '')
+                  if patch:
+                      diffs.append({
+                          'path': filename,
+                          'patch': patch
+                      })
               
               # 构建提交信息
               commit_info = {
@@ -150,7 +159,8 @@ jobs:
                       'added': [f['path'] for f in changed_files if f['status'] == 'added'],
                       'modified': [f['path'] for f in changed_files if f['status'] == 'modified'],
                       'removed': [f['path'] for f in changed_files if f['status'] == 'removed']
-                  }
+                  },
+                  'diffs': diffs
               }
               commit_list.append(commit_info)
           
@@ -169,6 +179,11 @@ jobs:
           
           print(f'Generated listener_output.json with {len(commit_list)} commits')
           "
+          echo "========================================"
+          echo "Listener Output Content:"
+          echo "========================================"
+          cat listener_output.json
+          echo "========================================"
 
       - name: Upload listener output
         if: steps.get-commits.outputs.has_commits == 'true'
