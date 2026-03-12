@@ -17,9 +17,9 @@ on:
         required: false
         default: "2"
         type: string
-  schedule:
-    # 每2小时运行一次（UTC时间，中国时间UTC+8）
-    - cron: '0 */2 * * *'
+  # schedule:
+  #   # 每2小时运行一次（UTC时间，中国时间UTC+8）
+  #   - cron: '0 */2 * * *'
 
 permissions:
   contents: read
